@@ -5,15 +5,17 @@ from cc_hardware.drivers.spads import SPADDataType
 
 
 class CaptureDataset(Dataset):
-    def __init__(self, captures, h, w, bins, window: int = 1):
+    def __init__(self, captures, background, h, w, bins, window: int = 1):
         """
         Args:
             captures (list[dict]): raw frames
+            background (torch.Tensor): background histogram
             h, w, bins (int): histogram dimensions
             window (int): number of neighbouring frames to average
                           (1 → no averaging)
         """
         self.cap = captures
+        self.bg = torch.tensor(background, dtype=torch.float32) if background is not None else None
         self.h, self.w, self.bins = h, w, bins
         self.win = max(window, 1)
 
@@ -40,6 +42,9 @@ class CaptureDataset(Dataset):
         )
         if hist.ndim == 1:
             hist = hist.view(self.h, self.w, self.bins)
+        if self.bg is not None:
+            hist = hist - self.bg
+            hist = torch.clamp(hist, min=0)
         return pos, hist
 
 
@@ -48,7 +53,7 @@ def collate(batch):
     return torch.stack(pos), torch.stack(hist)
 
 
-def create_dataloaders(captures, split: float = 0.8, batch_size: int = 32, **kwargs):
+def create_dataloaders(captures, background=None, split: float = 0.8, batch_size: int = 32, **kwargs):
     """
     Create DataLoader for training and validation datasets.
 
@@ -61,7 +66,7 @@ def create_dataloaders(captures, split: float = 0.8, batch_size: int = 32, **kwa
     Returns:
         tuple: (train_loader, val_loader)
     """
-    dataset = CaptureDataset(captures, **kwargs)
+    dataset = CaptureDataset(captures, background, **kwargs)
     train_size = int(len(dataset) * split)
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])

@@ -1,15 +1,16 @@
-from map import Map, Obstacle
 import numpy as np
-from reference_path import ReferencePath
-from spatial_bicycle_models import BicycleModel
 import matplotlib.pyplot as plt
-from MPC import MPC
 from scipy import sparse
 
+from gui.mpc.map import Map, Obstacle
+from gui.mpc.MPC import MPC
+from gui.mpc.reference_path import ReferencePath
+from gui.mpc.spatial_bicycle_models import BicycleModel
 
-def get_path(cx=-0.75, cy=-0.8):
+
+def get_path(cx=-0.75, cy=-0.8, show=False):
     # Load map file
-    map = Map(file_path='maps/sim_map.png', origin=[-1, -2],
+    map = Map(file_path='data/maps/sim_map.png', origin=[-1, -2],
                 resolution=0.005)
 
     # Specify waypoints
@@ -61,14 +62,6 @@ def get_path(cx=-0.75, cy=-0.8):
     # Simulation #
     ##############
 
-    # Set simulation time to zero
-    t = 0.0
-
-    # Logging containers
-    x_log = [car.temporal_state.x]
-    y_log = [car.temporal_state.y]
-    v_log = [0.0]
-
     # Until arrival at end of path
     while car.s < reference_path.length:
 
@@ -81,33 +74,20 @@ def get_path(cx=-0.75, cy=-0.8):
         # Simulate car
         car.drive(u)
 
-        # Log car state
-        x_log.append(car.temporal_state.x)
-        y_log.append(car.temporal_state.y)
-        v_log.append(u[0])
-
-        # Increment simulation time
-        t += car.Ts
-
         # Plot path and drivable area
-        reference_path.show()
+        if show:
+            reference_path.show()
 
         # Plot car
-        car.show()
+        if show:
+            car.show()
 
         # Plot MPC prediction
-        mpc.show_prediction()
+        if show:
+            mpc.show_prediction()
 
-        # Set figure title
-        plt.title('MPC Simulation: v(t): {:.2f}, delta(t): {:.2f}, Duration: '
-                  '{:.2f} s'.format(u[0], u[1], t))
-        plt.axis('off')
-        plt.pause(0.001)
-
-    plt.figure()
-    x, y = mpc.current_prediction
-    plt.plot(x, y, 'r--', label='MPC Prediction')
-    plt.show()
+    if show:
+        plt.show()
 
     return mpc.current_prediction
 

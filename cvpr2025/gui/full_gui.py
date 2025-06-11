@@ -57,19 +57,21 @@ class CVPR25FullDashboard(Dashboard[CVPR25FullDashboardConfig]):
         self._load_static_scene(
             Path("data") / "car.obj",
             alpha=1.0,
-            depth_test=True,
             color=(0.05, 0.15, 0.75),
         )
         self._load_object_mesh()
         self._create_gt_scatter()
+        self._create_path_visualization()
         self._configure_camera()
 
         @self.canvas.events.key_press.connect
         def on_key_press(event):
             if event.key == " ":
                 cam = self.view.camera
-                print(f"TurntableCamera(center={cam.center}, distance={cam.distance}, "
-                    f"elevation={cam.elevation}, azimuth={cam.azimuth})")
+                print(
+                    f"TurntableCamera(center={cam.center}, distance={cam.distance}, "
+                    f"elevation={cam.elevation}, azimuth={cam.azimuth})"
+                )
             if event.key == "escape":
                 self.close()
 
@@ -138,7 +140,11 @@ class CVPR25FullDashboard(Dashboard[CVPR25FullDashboardConfig]):
         self._add_wall_segment((-10, 0), (-30, 0))
 
     def _load_static_scene(
-        self, model_path: Path, alpha=0.75, depth_test=False, color=(0.8, 0.8, 0.8), flip_faces=False
+        self,
+        model_path: Path,
+        alpha=0.75,
+        color=(0.8, 0.8, 0.8),
+        flip_faces=False,
     ):
         mesh = trimesh.load(model_path, force="mesh")
         mesh.apply_transform(
@@ -155,7 +161,10 @@ class CVPR25FullDashboard(Dashboard[CVPR25FullDashboardConfig]):
             shading="smooth",
             parent=self.view.scene,
         )
-        self.scene_mesh.set_gl_state(blend=True, depth_test=depth_test, cull_face='back')
+        self.scene_mesh.set_gl_state(
+            blend=True, depth_test=True, cull_face="back", 
+        )
+        self.scene_mesh.order = 1
 
     def _load_object_mesh(self):
         mesh = trimesh.load(self.config.obj_path, force="mesh")
@@ -176,7 +185,18 @@ class CVPR25FullDashboard(Dashboard[CVPR25FullDashboardConfig]):
     def _create_gt_scatter(self):
         self.gt_dots = scene.visuals.Markers(parent=self.view.scene)
         self.gt_dots.set_data(
-            pos=np.zeros((1, 3)), size=self.config.dot_size, face_color=(0, 1, 0, 1)
+            pos=np.zeros((1, 3)), size=0, face_color=(0, 1, 0, 1)
+        )
+
+    def _create_path_visualization(self):
+        # Create a path visualization using a line
+        self.path_line = scene.visuals.Line(
+            pos=np.zeros((1, 3)),
+            color=(0, 0, 1, 1),
+            width=100,
+            parent=self.view.scene,
+            method="gl",
+            antialias=True
         )
 
     def _configure_camera(self):
@@ -191,6 +211,7 @@ class CVPR25FullDashboard(Dashboard[CVPR25FullDashboardConfig]):
         self,
         frame: int,
         positions: list[tuple[float, float]] = [],
+        path: np.ndarray | None = None,
         gt_positions: list[tuple[float, float]] = [],
         **_,
     ):
@@ -201,6 +222,15 @@ class CVPR25FullDashboard(Dashboard[CVPR25FullDashboardConfig]):
             T.rotate(-90, (0, 1, 0))
             T.translate((x, y, self._OBJ_Z))
             self.pred_mesh.transform = T
+
+        if path is not None:
+            self.path_line.set_data(pos=path)
+
+            centroid = np.mean(path, axis=0)
+            self.path_line.transform = transforms.MatrixTransform()
+            self.path_line.transform.translate(-centroid)
+            self.path_line.transform.rotate(180, (0, 0, 1))
+            self.path_line.transform.translate(centroid)
 
         if gt_positions:
             pos3d = np.c_[
@@ -235,9 +265,15 @@ if __name__ == "__main__":
         CVPR25FullDashboardConfig(x_range=(0, 32), y_range=(0, 32))
     )
     dash.setup()
+
+    position = (16.0, 16.0)
+
+    # Create a simple path for demonstration
+    path = np.array([[0, 0, 0], [10, 10, 0], [20, 5, 0], [30, 15, 0]])
+
     try:
         while dash.is_okay:
-            dash.update(frame=0, positions=[(0.0, 0.0)], gt_positions=[(2.0, 2.0)])
+            dash.update(frame=0, positions=[position], path=path)
     except KeyboardInterrupt:
         print("Exiting dashboard...")
         dash.close()

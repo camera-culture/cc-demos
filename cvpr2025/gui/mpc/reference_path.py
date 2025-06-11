@@ -1,10 +1,11 @@
 import numpy as np
 import math
-from map import Map, Obstacle
 from skimage.draw import line_aa
 import matplotlib.pyplot as plt
 from scipy import sparse
 import osqp
+
+from gui.mpc.map import Map, Obstacle
 
 # Colors
 DRIVABLE_AREA = '#BDC3C7'

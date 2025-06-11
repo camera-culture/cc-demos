@@ -54,13 +54,13 @@ WRAPPED_SENSOR = VL53L8CHConfig8x8.create(
     ranging_frequency_hz=9,
     data_type=SPADDataType.HISTOGRAM | SPADDataType.POINT_CLOUD | SPADDataType.DISTANCE,
 )
-WRAPPED_SENSOR = SPADBackgroundRemovalWrapperConfig.create(
-    pkl_spad=PklSPADSensorConfig.create(
-        pkl_path=Path("logs") / "2025-06-10/18-49-11/data.pkl",
-        index=1,
-    ),
-    wrapped=WRAPPED_SENSOR,
-)
+# WRAPPED_SENSOR = SPADBackgroundRemovalWrapperConfig.create(
+#     pkl_spad=PklSPADSensorConfig.create(
+#         pkl_path=Path("logs") / "2025-06-11/11-45-06/data.pkl",
+#         index=1,
+#     ),
+#     wrapped=WRAPPED_SENSOR,
+# )
 SENSOR = WRAPPED_SENSOR
 
 DASHBOARD = PyQtGraphDashboardConfig.create(fullscreen=True)
@@ -69,14 +69,14 @@ DASHBOARD = DummySPADDashboardConfig.create()
 STEPPER_SYSTEM = SingleDrive1AxisGantryConfig.create()
 STEPPER_CONTROLLER = SnakeStepperControllerConfigXY.create(
     axes=dict(
-        x=SnakeControllerAxisConfig(range=(0, 32), samples=10),
-        y=SnakeControllerAxisConfig(range=(0, 32), samples=10),
+        x=SnakeControllerAxisConfig(range=(0, 32), samples=40),
+        y=SnakeControllerAxisConfig(range=(0, 32), samples=40),
     )
 )
 
-REPETITIONS = 2
+REPETITIONS = 1
 NUM_SAMPLES = 10
-REDUNDANT_SAMPLES = 2
+REDUNDANT_SAMPLES = 3
 
 # ==========
 
