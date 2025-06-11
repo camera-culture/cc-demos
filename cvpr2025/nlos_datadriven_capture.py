@@ -9,13 +9,11 @@ import numpy as np
 from cc_hardware.drivers.spads import SPADDataType, SPADSensor, SPADSensorConfig
 from cc_hardware.drivers.spads.pkl import PklSPADSensorConfig
 from cc_hardware.drivers.spads.spad_wrappers import (
-    SPADMovingAverageWrapperConfig,
     SPADBackgroundRemovalWrapperConfig,
 )
 from cc_hardware.drivers.spads.vl53l8ch import (
     RangingMode,
     VL53L8CHConfig8x8,
-    VL53L8CHConfig4x4,
 )
 from cc_hardware.drivers.stepper_motors import (
     StepperControllerConfig,
@@ -63,11 +61,6 @@ WRAPPED_SENSOR = SPADBackgroundRemovalWrapperConfig.create(
     ),
     wrapped=WRAPPED_SENSOR,
 )
-WINDOW_SIZE = 10
-# WRAPPED_SENSOR = SPADMovingAverageWrapperConfig.create(
-#     wrapped=WRAPPED_SENSOR,
-#     window_size=1,
-# )
 SENSOR = WRAPPED_SENSOR
 
 DASHBOARD = PyQtGraphDashboardConfig.create(fullscreen=True)
@@ -82,8 +75,8 @@ STEPPER_CONTROLLER = SnakeStepperControllerConfigXY.create(
 )
 
 REPETITIONS = 2
+NUM_SAMPLES = 10
 REDUNDANT_SAMPLES = 2
-RESET_FOR_WINDOWS = True
 
 # ==========
 
@@ -144,9 +137,15 @@ def setup(
         input("Press Enter to start background capture...")
         data = _sensor.accumulate(num_samples=REDUNDANT_SAMPLES * REPETITIONS)
         data = {
-            SPADDataType.HISTOGRAM: np.mean([d[SPADDataType.HISTOGRAM] for d in data], axis=0),
-            SPADDataType.POINT_CLOUD: np.mean([d[SPADDataType.POINT_CLOUD] for d in data], axis=0),
-            SPADDataType.DISTANCE: np.mean([d[SPADDataType.DISTANCE] for d in data], axis=0),
+            SPADDataType.HISTOGRAM: np.mean(
+                [d[SPADDataType.HISTOGRAM] for d in data], axis=0
+            ),
+            SPADDataType.POINT_CLOUD: np.mean(
+                [d[SPADDataType.POINT_CLOUD] for d in data], axis=0
+            ),
+            SPADDataType.DISTANCE: np.mean(
+                [d[SPADDataType.DISTANCE] for d in data], axis=0
+            ),
         }
         if writer is not None:
             writer.append({"iter": -1, "background": True, **data})
@@ -189,16 +188,19 @@ def loop(
         pos = controller.get_position(pos_idx)
         stepper_system.move_to(pos["x"], pos["y"])
 
-    if RESET_FOR_WINDOWS:
-        # sensor.reset()
-        data = sensor.accumulate(num_samples=WINDOW_SIZE)
-        data = {
-            SPADDataType.HISTOGRAM: np.mean([d[SPADDataType.HISTOGRAM] for d in data], axis=0),
-            SPADDataType.POINT_CLOUD: np.mean([d[SPADDataType.POINT_CLOUD] for d in data], axis=0),
-            SPADDataType.DISTANCE: np.mean([d[SPADDataType.DISTANCE] for d in data], axis=0),
-        }
-    else:
-        data = sensor.accumulate()
+    data = sensor.accumulate(num_samples=NUM_SAMPLES)
+    data = {
+        SPADDataType.HISTOGRAM: np.mean(
+            [d[SPADDataType.HISTOGRAM] for d in data], axis=0
+        ),
+        SPADDataType.POINT_CLOUD: np.mean(
+            [d[SPADDataType.POINT_CLOUD] for d in data], axis=0
+        ),
+        SPADDataType.DISTANCE: np.mean(
+            [d[SPADDataType.DISTANCE] for d in data], axis=0
+        ),
+    }
+
     dashboard.update(frame, data=data)
 
     if writer is not None:
