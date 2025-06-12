@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy import sparse
 import osqp
 
-from gui.mpc.map import Map, Obstacle
+from mpc.map import Map, Obstacle
 
 # Colors
 DRIVABLE_AREA = '#BDC3C7'

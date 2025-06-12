@@ -102,3 +102,93 @@ class DeepLocation8(nn.Module):
         self.eval()
         with torch.no_grad():
             return self.forward(x).cpu().numpy()
+
+
+class ModelWrapper(nn.Module):
+    """Base wrapper that delegates `forward` to the wrapped model, then
+    calls `process_output` for optional post-processing."""
+
+    def __init__(self, model: nn.Module, queue=None):
+        super().__init__()
+        self.model = model.to(TORCH_DEVICE)
+        self.queue = queue
+
+    def forward(self, x: torch.Tensor | np.ndarray) -> torch.Tensor:
+        # --- unchanged conversion/validation ---
+        if isinstance(x, (np.ndarray, list)):
+            x = torch.tensor(x, dtype=torch.float32, device=TORCH_DEVICE)
+        elif not isinstance(x, torch.Tensor):
+            raise TypeError(f"Unsupported input type {type(x)}")
+
+        # --- add missing batch-dim logic (matches DeepLocation8.evaluate) ---
+        if x.ndim == 3:          # (H, W, B)
+            x = x.unsqueeze(0)   # -> (1, H, W, B)
+
+        # ---------------------------------------------------------------
+        out = self.model(x)
+        out = self.process_output(out)
+        if self.queue is not None:
+            self.queue.put(out.detach().cpu().numpy())
+        return out
+
+    def process_output(self, output: torch.Tensor) -> torch.Tensor:  # noqa: D401
+        """Override in subclasses."""
+        return output
+
+
+class KalmanFilter:
+    def __init__(self, state_dim: int, process_noise_var: float, measurement_noise_var: float):
+        self.n = state_dim
+        self.x = torch.zeros(self.n, 1, device=TORCH_DEVICE)
+        self.P = torch.eye(self.n, device=TORCH_DEVICE)
+        self.F = torch.eye(self.n, device=TORCH_DEVICE)
+        self.Q = torch.eye(self.n, device=TORCH_DEVICE) * process_noise_var
+        self.H = torch.eye(self.n, device=TORCH_DEVICE)
+        self.R = torch.eye(self.n, device=TORCH_DEVICE) * measurement_noise_var
+
+    def predict(self):
+        self.x = self.F @ self.x
+        self.P = self.F @ self.P @ self.F.T + self.Q
+
+    def update(self, z: torch.Tensor):
+        z = z.reshape(self.n, 1)
+        S = self.H @ self.P @ self.H.T + self.R
+        K = self.P @ self.H.T @ torch.linalg.inv(S)
+        y = z - self.H @ self.x
+        self.x = self.x + K @ y
+        self.P = (torch.eye(self.n, device=TORCH_DEVICE) - K @ self.H) @ self.P
+
+    def get_state(self) -> torch.Tensor:
+        return self.x.clone()
+
+
+class KalmanWrapper(ModelWrapper):
+    """Smooth model outputs using a simple Kalman Filter."""
+
+    def __init__(
+        self,
+        model: nn.Module,
+        queue=None,
+        process_noise_var: float = 0.01,
+        measurement_noise_var: float = 0.01,
+    ):
+        super().__init__(model, queue)
+        self.kf = KalmanFilter(
+            state_dim=2,
+            process_noise_var=process_noise_var,
+            measurement_noise_var=measurement_noise_var,
+        )
+
+    def process_output(self, output: torch.Tensor) -> torch.Tensor:  # noqa: D401
+        # Assume batch size 1; use first row if batch > 1.
+        meas = output[0] if output.ndim == 2 else output
+        self.kf.predict()
+        self.kf.update(meas.detach())
+        return self.kf.get_state().flatten()
+
+    def evaluate(self, x):
+        """Keeps the DeepLocation8 .evaluate(…) contract."""
+        self.eval()
+        with torch.no_grad():
+            out = self.forward(x)        # already smoothed
+        return out.cpu().numpy()

@@ -9,11 +9,12 @@ import numpy as np
 from cc_hardware.drivers.spads import SPADDataType, SPADSensor, SPADSensorConfig
 from cc_hardware.drivers.spads.pkl import PklSPADSensorConfig
 from cc_hardware.drivers.spads.spad_wrappers import (
-    SPADBackgroundRemovalWrapperConfig,
+    SPADBackgroundRemovalWrapperConfig, SPADMergeWrapperConfig,
+    SPADMovingAverageWrapperConfig,
 )
 from cc_hardware.drivers.spads.vl53l8ch import (
     RangingMode,
-    VL53L8CHConfig8x8,
+    VL53L8CHConfig8x8, VL53L8CHConfig4x4,
 )
 from cc_hardware.drivers.stepper_motors import (
     StepperControllerConfig,
@@ -54,11 +55,19 @@ WRAPPED_SENSOR = VL53L8CHConfig8x8.create(
     ranging_frequency_hz=9,
     data_type=SPADDataType.HISTOGRAM | SPADDataType.POINT_CLOUD | SPADDataType.DISTANCE,
 )
-# WRAPPED_SENSOR = SPADBackgroundRemovalWrapperConfig.create(
-#     pkl_spad=PklSPADSensorConfig.create(
-#         pkl_path=Path("logs") / "2025-06-11/11-45-06/data.pkl",
-#         index=1,
-#     ),
+# WRAPPED_SENSOR = SPADMovingAverageWrapperConfig.create(
+#     wrapped=WRAPPED_SENSOR,
+#     window_size=1,
+# )
+WRAPPED_SENSOR = SPADBackgroundRemovalWrapperConfig.create(
+    pkl_spad=PklSPADSensorConfig.create(
+        pkl_path=Path("logs") / "2025-06-11/23-57-03/data.pkl",
+        index=1,
+    ),
+    wrapped=WRAPPED_SENSOR,
+)
+# WRAPPED_SENSOR = SPADMergeWrapperConfig.create(
+#     merge_cols=True,
 #     wrapped=WRAPPED_SENSOR,
 # )
 SENSOR = WRAPPED_SENSOR
@@ -69,14 +78,14 @@ DASHBOARD = DummySPADDashboardConfig.create()
 STEPPER_SYSTEM = SingleDrive1AxisGantryConfig.create()
 STEPPER_CONTROLLER = SnakeStepperControllerConfigXY.create(
     axes=dict(
-        x=SnakeControllerAxisConfig(range=(0, 32), samples=40),
-        y=SnakeControllerAxisConfig(range=(0, 32), samples=40),
+        x=SnakeControllerAxisConfig(range=(16, 16), samples=1),
+        y=SnakeControllerAxisConfig(range=(0, 32), samples=25),
     )
 )
 
-REPETITIONS = 1
-NUM_SAMPLES = 10
-REDUNDANT_SAMPLES = 3
+REPETITIONS = 5
+NUM_SAMPLES = 1
+REDUNDANT_SAMPLES = 10
 
 # ==========
 
@@ -172,6 +181,7 @@ def loop(
     controller: StepperController,
     pbar: tqdm.tqdm,
     writer: PklHandler | None = None,
+    reverse: bool = False,
 ):
     pbar.update(1)
 
@@ -182,6 +192,8 @@ def loop(
         return False
 
     pos_idx = block % controller.total_positions
+    if reverse:
+        pos_idx = controller.total_positions - 1 - pos_idx
 
     # move & reset at the start of each block
     if frame % REDUNDANT_SAMPLES == 0:
@@ -189,6 +201,8 @@ def loop(
         stepper_system.move_to(pos["x"], pos["y"])
 
     data = sensor.accumulate(num_samples=NUM_SAMPLES)
+    if NUM_SAMPLES == 1:
+        data = [data]
     data = {
         SPADDataType.HISTOGRAM: np.mean(
             [d[SPADDataType.HISTOGRAM] for d in data], axis=0
@@ -228,6 +242,7 @@ def nlos_datadriven_capture(
     stepper_port: str | None = None,
     record: bool = False,
     background: bool = True,
+    reverse: bool = False,
 ):
     """Sets up and runs the SPAD dashboard.
 
@@ -252,7 +267,7 @@ def nlos_datadriven_capture(
                 controller=STEPPER_CONTROLLER,
                 background=background,
             ),
-            loop=loop,
+            loop=partial(loop, reverse=reverse),
             cleanup=cleanup,
         )
 

@@ -17,8 +17,11 @@ from cc_hardware.drivers.stepper_motors.stepper_controller import (
     StepperController,
 )
 from cc_hardware.drivers.spads.spad_wrappers import SPADMovingAverageWrapperConfig
+from cc_hardware.drivers.stepper_motors.stepper_system import StepperMotorSystemAxis
 from cc_hardware.drivers.stepper_motors.telemetrix_stepper import (
     SingleDrive1AxisGantryConfig,
+    SingleDrive1AxisGantryXConfig,
+    SingleDrive1AxisGantryYConfig,
 )
 from cc_hardware.utils import (
     AtomicVariable,
@@ -35,17 +38,25 @@ from cc_hardware.utils.file_handlers import PklReader
 
 from gui.simple_gui import CVPR25DashboardConfig, CVPR25Dashboard
 from gui.full_gui import CVPR25FullDashboardConfig, CVPR25FullDashboard
-from gui.mpc.simulation import get_path
-from ml.model import DeepLocation8
+from ml.model import DeepLocation8, KalmanWrapper
 
 # ==========
 
-STEPPER_SYSTEM = SingleDrive1AxisGantryConfig.create()
-X_RANGE = (0, 32)
-Y_RANGE = (8, 36)
+STEPPER_SYSTEM = SingleDrive1AxisGantryConfig.create(
+    axes={
+        StepperMotorSystemAxis.X: [
+            SingleDrive1AxisGantryXConfig.create(speed=2**13 - 1)
+        ],
+        StepperMotorSystemAxis.Y: [
+            SingleDrive1AxisGantryYConfig.create(speed=2**13 - 1)
+        ],
+    }
+)
+X_RANGE = (16, 16)
+Y_RANGE = (0, 32)
 STEPPER_CONTROLLER = SnakeStepperControllerConfigXY.create(
     axes=dict(
-        x=SnakeControllerAxisConfig(range=X_RANGE, samples=3),
+        x=SnakeControllerAxisConfig(range=X_RANGE, samples=2),
         y=SnakeControllerAxisConfig(range=Y_RANGE, samples=2),
     )
 )
@@ -70,7 +81,7 @@ POSITIONS = []
 LAST_POSITION = None
 CONTROLLER_POS = AtomicVariable((0.0, 0.0))
 PREDICTED_POS: MPAtomicVariable
-PATH: MPAtomicVariable 
+PATH: MPAtomicVariable
 HISTOGRAM = AtomicVariable(None)
 
 # ==========
@@ -128,11 +139,13 @@ def sensor_callback(
     )
 
 
-def path_callback(x_range, y_range, PREDICTED_POS: MPAtomicVariable, PATH: MPAtomicVariable):
-    from gui.mpc.map import Map, Obstacle
-    from gui.mpc.MPC import MPC
-    from gui.mpc.reference_path import ReferencePath
-    from gui.mpc.spatial_bicycle_models import BicycleModel
+def path_callback(
+    x_range, y_range, PREDICTED_POS: MPAtomicVariable, PATH: MPAtomicVariable
+):
+    from mpc.map import Map, Obstacle
+    from mpc.MPC import MPC
+    from mpc.reference_path import ReferencePath
+    from mpc.spatial_bicycle_models import BicycleModel
     from scipy import sparse
 
     # Load map file
@@ -242,7 +255,7 @@ def create_sensor(
     sensor_config: SPADSensorConfig = config["sensor"]
     sensor = SPADMovingAverageWrapperConfig.create(
         wrapped=sensor_config,
-        window_size=10,
+        window_size=1,
     )
     sensor = SPADSensor.create_from_config(sensor, port=sensor_port)
     sensor = threaded_component(sensor)
@@ -292,6 +305,7 @@ def load_model(
     ).to(TORCH_DEVICE)
     model.load_state_dict(torch.load(model_path, weights_only=True))
     model.to(TORCH_DEVICE)
+    model = KalmanWrapper(model, process_noise_var=1e-4, measurement_noise_var=0.1)
 
     manager.add(model=model)
     return model
@@ -361,20 +375,25 @@ def loop(
         get_logger().warning("No histogram available for evaluation.")
         return
     positions = model.evaluate(histogram)
-    POSITIONS.append(positions[0])
+    POSITIONS.append(positions)
     if len(POSITIONS) > 20:
         POSITIONS.pop(0)
 
     position = np.mean(POSITIONS, axis=0)
-    position = np.array((position[1], position[0]))
-    if LAST_POSITION is not None:
-        position = LAST_POSITION + 0.1 * (position - LAST_POSITION)
-    LAST_POSITION = position
+    position = np.array(
+        (position[0], 32 - position[1])
+    )  # Adjust for GUI coordinate system
+    # position = np.array((position[1], position[0]))
+    # if LAST_POSITION is not None:
+    #     position = LAST_POSITION + 0.1 * (position - LAST_POSITION)
+    # LAST_POSITION = position
     PREDICTED_POS.set(position)
+    histogram = np.mean(histogram, axis=(0, 1))
     gui.update(
         frame=frame,
         positions=[position],
         # gt_positions=[CONTROLLER_POS.get()],
+        histograms=histogram,
         path=PATH.get(),
     )
 
