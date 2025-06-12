@@ -3,6 +3,7 @@ from copy import deepcopy
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 
 from cc_hardware.drivers.spads import SPADDataType, SPADSensorConfig
 from cc_hardware.utils import Component, config_wrapper
@@ -69,8 +70,8 @@ def process_histograms(data, sensor_config):
             distance = distances[i, j]
             distance_bin = distance / 1000 * 2 / C / sensor_config.timing_resolution
             closest_bin = np.argmin(np.abs(extended_bins - distance_bin))
-            subsample = sensor_config.subsample
-            adjusted_bins = (extended_bins - closest_bin * subsample)[closest_bin:]
+            # subsample = sensor_config.subsample
+            # adjusted_bins = (extended_bins - closest_bin * subsample)[closest_bin:]
             adjusted_hist = extended_histograms[i, j, closest_bin:]
             processed_histograms[i, j, : len(adjusted_hist)] = adjusted_hist
     return processed_histograms
@@ -108,10 +109,23 @@ class BackprojectionAlgorithm:
         assert SPADDataType.HISTOGRAM in data, "Histogram missing"
 
         pt_cloud = data[SPADDataType.POINT_CLOUD].reshape(-1, 3)
-        # pt_cloud = align_plane(pt_cloud)
+        pt_cloud = align_plane(pt_cloud)
+        # by default, histogram is 8x8xbins
+        # need to duplicate each pixel so that it's (16x8)x(16x8)x(bins),
+        # so 128x128xbins
+        # data[SPADDataType.HISTOGRAM] = np.repeat(
+        #     data[SPADDataType.HISTOGRAM], 16, axis=0
+        # ).repeat(16, axis=1)
+        # data[SPADDataType.DISTANCE] = np.repeat(
+        #     data[SPADDataType.DISTANCE], 16, axis=0
+        # ).repeat(16, axis=1)
         hists = process_histograms(data, self.sensor_config).reshape(
             pt_cloud.shape[0], -1
         )
+        # argmax and set peaks to 1 and eveyrhing else to 0
+        # peaks = np.argmax(hists, axis=1)
+        # hists = np.zeros_like(hists)
+        # hists[np.arange(hists.shape[0]), peaks] = 1
 
         bw = self.sensor_config.timing_resolution
         thresh = bw * C
@@ -159,6 +173,130 @@ class BackprojectionAlgorithm:
     def zres(self) -> float:
         """Returns the z resolution of the voxel grid."""
         return self.resolution[2]
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def align_plane(pt_cloud: torch.Tensor, dist_threshold: float = 0.01) -> torch.Tensor:
+    pts = pt_cloud.view(-1, 3).to(device)
+    centroid = pts.mean(0, keepdim=True)
+    _, _, vh = torch.linalg.svd(pts - centroid, full_matrices=False)
+    normal = vh[-1] / torch.linalg.norm(vh[-1])
+    dists = (pts - centroid) @ normal
+    inliers = pts[torch.abs(dists) < dist_threshold]
+    centroid = inliers.mean(0, keepdim=True)
+    _, _, vh = torch.linalg.svd(inliers - centroid, full_matrices=False)
+    normal = vh[-1] / torch.linalg.norm(vh[-1])
+    target = torch.tensor([0.0, 0.0, 1.0], device=device)
+    axis = torch.linalg.cross(normal, target)
+    if torch.linalg.norm(axis) < 1e-6:
+        R = torch.eye(3, device=device)
+    else:
+        axis = axis / torch.linalg.norm(axis)
+        angle = torch.arccos(torch.clamp(torch.dot(normal, target), -1.0, 1.0))
+        K = torch.tensor(
+            [[0, -axis[2], axis[1]],
+             [axis[2], 0, -axis[0]],
+             [-axis[1], axis[0], 0]], device=device
+        )
+        R = torch.eye(3, device=device) + torch.sin(angle) * K + (1 - torch.cos(angle)) * (K @ K)
+    pts_trans = (pts - centroid) @ R.T
+    mask = torch.abs(pts_trans @ target) < dist_threshold
+    pts_trans[:, 2] -= pts_trans[mask, 2].mean()
+    return pts_trans.view_as(pt_cloud)
+
+
+def extend_histograms(data, cfg: SPADSensorConfig, return_bins=False):
+    h = torch.as_tensor(data[SPADDataType.HISTOGRAM], device=device)
+    bins = torch.arange(0, cfg.start_bin + cfg.num_bins * cfg.subsample, cfg.subsample,
+                        device=device)
+    ext = torch.zeros(*h.shape[:-1], len(bins), device=device)
+    ext[..., -h.shape[-1]:] = h
+    return (bins, ext) if return_bins else ext
+
+
+def process_histograms(data, cfg: SPADSensorConfig):
+    h = torch.as_tensor(data[SPADDataType.HISTOGRAM], device=device)
+    d = torch.as_tensor(data[SPADDataType.DISTANCE], device=device)
+    bins, ext = extend_histograms(data, cfg, True)
+    proc = torch.zeros_like(ext)
+    dist_bins = d / 1000 * 2 / C / cfg.timing_resolution
+    idx = (bins.unsqueeze(0).unsqueeze(0) - dist_bins.unsqueeze(-1)).abs().argmin(-1)
+    for i in range(h.shape[0]):
+        for j in range(h.shape[1]):
+            k = idx[i, j]
+            adj = ext[i, j, k:]
+            proc[i, j, :adj.shape[0]] = adj
+    return proc
+
+
+# ---------- algorithm ---------- #
+
+class BackprojectionAlgorithm:
+    def __init__(self, cfg: BackprojectionConfig, sensor_config: SPADSensorConfig):
+        self.cfg = cfg
+        self.sensor_cfg = sensor_config
+        self.device = device
+        self.voxel_grid = self._create_voxel_grid().to(device)
+        self.volume = torch.zeros((self.voxel_grid.shape[0], 1), device=device, dtype=torch.float32)
+
+    def _create_voxel_grid(self):
+        xr, yr, zr = self.cfg.x_range, self.cfg.y_range, self.cfg.z_range
+        nx, ny, nz = self.cfg.num_x, self.cfg.num_y, self.cfg.num_z
+        x = torch.linspace(xr[0], xr[1], nx, device=device, dtype=torch.float32, requires_grad=False)
+        y = torch.linspace(yr[0], yr[1], ny, device=device, dtype=torch.float32, requires_grad=False)
+        z = torch.linspace(zr[0], zr[1], nz, device=device, dtype=torch.float32, requires_grad=False)
+        xv, yv, zv = torch.meshgrid(x, y, z, indexing="ij")
+        return torch.stack((xv, yv, zv), -1).view(-1, 3)
+
+    def update(self, data):
+        pc = torch.as_tensor(data[SPADDataType.POINT_CLOUD], device=device, dtype=torch.float32).view(-1, 3)
+        pc = align_plane(pc)
+        h = process_histograms(data, self.sensor_cfg).view(pc.shape[0], -1)
+        bw = self.sensor_cfg.timing_resolution
+        thresh, factor = bw * C, bw * C / 2
+        cum = h.cumsum(-1)
+        dists = torch.cdist(pc, self.voxel_grid)               # (P, V)
+        lower = ((dists - thresh) / factor).ceil().clamp(0, h.shape[1] - 1).long()
+        upper = ((dists + thresh) / factor).floor().clamp(0, h.shape[1] - 1).long()
+        sums_u = cum.gather(1, upper)
+        sums_l = cum.gather(1, (lower - 1).clamp(0))           # safe for lower==0
+        sums = torch.where(lower > 0, sums_u - sums_l, sums_u) # (P, V)
+        new_vol = sums.sum(0, keepdim=True).t()                # (V, 1)
+        if self.cfg.update_continuously:
+            self.volume += new_vol
+            out = self.volume
+        else:
+            out = new_vol
+        return out.view(self.cfg.num_x, self.cfg.num_y, self.cfg.num_z).cpu().numpy()
+
+    @property
+    def resolution(self) -> tuple[float, float, float]:
+        """Returns the resolution of the voxel grid."""
+        x_res = (self.cfg.x_range[1] - self.cfg.x_range[0]) / self.cfg.num_x
+        y_res = (self.cfg.y_range[1] - self.cfg.y_range[0]) / self.cfg.num_y
+        z_res = (self.cfg.z_range[1] - self.cfg.z_range[0]) / self.cfg.num_z
+        return x_res, y_res, z_res
+
+    @property
+    def xres(self) -> float:
+        """Returns the x resolution of the voxel grid."""
+        return self.resolution[0]
+
+    @property
+    def yres(self) -> float:
+        """Returns the y resolution of the voxel grid."""
+        return self.resolution[1]
+
+    @property
+    def zres(self) -> float:
+        """Returns the z resolution of the voxel grid."""
+        return self.resolution[2]
+
+    @property
+    def config(self) -> BackprojectionConfig:
+        """Returns the configuration of the algorithm."""
+        return self.cfg
 
 
 # ==========
@@ -299,7 +437,8 @@ class BackprojectionDashboard(Component[BackprojectionDashboardConfig]):
             self.proj_axes.append((ax4, im4))
 
             self.fig_proj.suptitle("Volume Projection")
-            self.fig_proj.show()
+            # show fullscreen
+            self.fig_proj.canvas.manager.full_screen_toggle()
 
     def update(self, volume: np.ndarray, signal: np.ndarray) -> None:
         cfg = self.config

@@ -35,14 +35,13 @@ NOW = datetime.now()
 LOGDIR: Path = Path("logs") / NOW.strftime("%Y-%m-%d") / NOW.strftime("%H-%M-%S")
 OUTPUT_PKL: Path = LOGDIR / "data.pkl"
 
-WRAPPED_SENSOR = VL53L8CHConfig8x8.create(
+WRAPPED_SENSOR = VL53L8CHConfig4x4.create(
     num_bins=18,
     subsample=1,
-    start_bin=23,
+    start_bin=50,
     ranging_mode=RangingMode.CONTINUOUS,
-    ranging_frequency_hz=9,
+    ranging_frequency_hz=15,
     data_type=SPADDataType.HISTOGRAM | SPADDataType.POINT_CLOUD | SPADDataType.DISTANCE,
-    port="/dev/cu.usbmodem21403"
 )
 # WRAPPED_SENSOR = SPADBackgroundRemovalWrapperConfig.create(
 #     pkl_spad=PklSPADSensorConfig.create(
@@ -97,9 +96,9 @@ def setup(
 
     # Initialize the backprojection algorithm
     backprojection_config = BackprojectionConfig(
-        x_range=(-1, 1),
-        y_range=(-1, 1),
-        z_range=(0, 2),
+        x_range=(-2, 2),
+        y_range=(-2, 2),
+        z_range=(0, 3),
         num_x=50,
         num_y=50,
         num_z=50,
@@ -119,6 +118,7 @@ def setup(
         num_x=backprojection_config.num_x,
         num_y=backprojection_config.num_y,
         num_z=backprojection_config.num_z,
+        # gamma=4.0,
         # show_
     )
     backprojection_dashboard = BackprojectionDashboard(backprojection_dashboard_config)
@@ -172,17 +172,23 @@ def loop(
                 )
                 return volume_padded
 
-            # volume = filter_volume(
-            #     volume,
-            #     num_x=algorithm.config.num_x,
-            #     num_y=algorithm.config.num_y,
-            # )
-            backprojection_dashboard.update(
+            volume = filter_volume(
                 volume,
-                data[SPADDataType.HISTOGRAM].reshape(
-                    -1, data[SPADDataType.HISTOGRAM].shape[-1]
-                ),
+                num_x=algorithm.config.num_x,
+                num_y=algorithm.config.num_y,
             )
+            # argmax and set peaks to 1 and eveyrhing else to 0
+            hists = data[SPADDataType.HISTOGRAM].reshape(
+                -1, data[SPADDataType.HISTOGRAM].shape[-1]
+            )
+            print(hists.shape, volume.shape)
+            # peaks = np.argmax(hists, axis=1)
+            # hists = np.zeros_like(hists)
+            # hists[np.arange(hists.shape[0]), peaks] = 1
+            # backprojection_dashboard.update(
+            #     volume,
+            #     hists,
+            # )
 
     if writer is not None:
         writer.append({"iter": frame, **data})
