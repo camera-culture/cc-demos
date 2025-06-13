@@ -161,7 +161,7 @@
           <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
         </button>
       </div>
-      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
         <div class="visually-hidden">Toggle table of contents sidebar</div>
         <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
       </label>
@@ -219,7 +219,7 @@
               <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
             </button>
           </div>
-          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
             <div class="visually-hidden">Toggle table of contents sidebar</div>
             <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
           </label>
@@ -228,6 +228,39 @@
           <section id="seeing-around-corners-in-real-time-using-mobile-lidar">
 <h1>Seeing Around Corners in Real-Time using Mobile LiDAR<a class="headerlink" href="#seeing-around-corners-in-real-time-using-mobile-lidar" title="Link to this heading">#</a></h1>
 <p>Non-line-of-sight imaging extends perception beyond direct view but has remained impractical on everyday devices. This demo presents a real-time system that uses a commercial mobile LiDAR sensor to track and reconstruct objects hidden around corners. By aggregating multi-bounce LiDAR returns across consecutive frames, our method boosts signal-to-noise ratio and emulates longer exposures, enabling motion-compensated tracking and reconstruction at ~15 Hz. Our system validates the practical implementation of non-line-of-sight imaging on consumer hardware, paving the way for next-generation applications in robotics, autonomous navigation, and augmented reality.</p>
+<p><em>Aaron Young, Siddharth Somasundaram, Nick Tsao, Nikhil Behari, Akshat Dave, Adithya Pediredla, Ramesh Raskar</em></p>
+<section id="project-papers">
+<h2>Project Papers<a class="headerlink" href="#project-papers" title="Link to this heading">#</a></h2>
+<div style="display: flex; align-items: center; gap: 1rem;">
+<img src="https://camera-culture.github.io/nlos-aided-autonomous-navigation/assets/paper-thumbnail.png" alt="NLOS-Aided Autonomous Navigation" width="100">
+<p><strong><a class="reference external" href="https://github.com/camera-culture/nlos-aided-autonomous-navigation/blob/main/docs/assets/young2024robospad.pdf">Enhancing Autonomous Navigation by Imaging Hidden Objects using Single-Photon LiDAR</a></strong>
+<a class="reference external" href="https://AaronYoung5.github.io/">Aaron Young</a><sup>*</sup>, <a class="reference external" href="https://www.linkedin.com/in/nevindu-b-664a3613b/">Nevindu M. Batagoda</a><sup>*</sup>, <a class="reference external" href="https://www.linkedin.com/in/haorui-zhang1018">Harry Zhang</a>, <a class="reference external" href="https://akshatdave.github.io/">Akshat Dave</a>, <a class="reference external" href="https://sites.google.com/view/adithyapediredla/">Adithya Pediredla</a>, <a class="reference external" href="https://sbel.wisc.edu/negrut-dan/">Dan Negrut</a>, <a class="reference external" href="https://www.media.mit.edu/people/raskar/overview/">Ramesh Raskar</a></p>
+<p><a class="reference external" href="https://github.com/camera-culture/nlos-aided-autonomous-navigation/blob/main/docs/assets/young2024robospad.pdf">Paper</a> | <a class="reference external" href="https://github.com/camera-culture/nlos-aided-autonomous-navigation">Code</a> | <a class="reference external" href="https://youtu.be/0GoUi0wrNMM">Video</a></p>
+<!-- Robust autonomous navigation in environments with limited visibility remains a critical challenge in robotics. We present a novel approach that leverages Non-Line-of-Sight (NLOS) sensing using single-photon LiDAR to improve visibility and enhance autonomous navigation. Our method enables mobile robots to ``see around corners" by utilizing multi-bounce light information, effectively expanding their perceptual range without additional infrastructure. We propose a three-module pipeline: (1) Sensing, which captures multi-bounce histograms using SPAD-based LiDAR; (2) Perception, which estimates occupancy maps of hidden regions from these histograms using a convolutional neural network; and (3) Control, which allows a robot to follow safe paths based on the estimated occupancy. We evaluate our approach through simulations and real-world experiments on a mobile robot navigating an L-shaped corridor with hidden obstacles. Our work represents the first experimental demonstration of NLOS imaging for autonomous navigation, paving the way for safer and more efficient robotic systems operating in complex environments. We also contribute a novel dynamics-integrated transient rendering framework for simulating NLOS scenarios, facilitating future research in this domain. -->
+</div>
+</section>
+<section id="citation">
+<h2>Citation<a class="headerlink" href="#citation" title="Link to this heading">#</a></h2>
+<p>If you would like to cite this demo, please use the following BibTeX entry:</p>
+<div class="highlight-bibtex notranslate"><div class="highlight"><pre><span></span><span class="nc">@inproceedings</span><span class="p">{</span><span class="nl">young2024enhancing</span><span class="p">,</span>
+<span class="w">    </span><span class="na">author</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{Young, Aaron and Batagoda, Nevindu M. and Zhang, Harry and Dave, Akshat and Pediredla, Adithya and Negrut, Dan and Raskar, Ramesh}</span><span class="p">,</span>
+<span class="w">    </span><span class="na">title</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{Enhancing Autonomous Navigation by Imaging Hidden Objects using Single-Photon LiDAR}</span><span class="p">,</span>
+<span class="w">    </span><span class="na">booktitle</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{ArXiv}</span><span class="p">,</span>
+<span class="w">    </span><span class="na">year</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{2024}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<div class="highlight-bibtex notranslate"><div class="highlight"><pre><span></span><span class="nc">@software</span><span class="p">{</span><span class="nl">young2025seeing</span><span class="p">,</span>
+<span class="w">    </span><span class="na">author</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{Aaron Young and Siddharth Somasundaram and Nick Tsao and Nikhil Behari and Akshat Dave and Adithya Pediredla and Ramesh Raskar}</span><span class="p">,</span>
+<span class="w">    </span><span class="na">title</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{{Seeing Around Corners in Real-Time using Mobile LiDAR}}</span><span class="p">,</span>
+<span class="w">    </span><span class="na">year</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{2025}</span><span class="p">,</span>
+<span class="w">    </span><span class="na">publisher</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{GitHub}</span><span class="p">,</span>
+<span class="w">    </span><span class="na">journal</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{GitHub repository}</span><span class="p">,</span>
+<span class="w">    </span><span class="na">howpublished</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{\url{https://github.com/camera-culture/cc-demos}}</span><span class="p">,</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
 </section>
 
         </article>
@@ -265,8 +298,28 @@
         
       </footer>
     </div>
-    <aside class="toc-drawer no-toc">
+    <aside class="toc-drawer">
       
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Seeing Around Corners in Real-Time using Mobile LiDAR</a><ul>
+<li><a class="reference internal" href="#project-papers">Project Papers</a></li>
+<li><a class="reference internal" href="#citation">Citation</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
       
       
     </aside>
