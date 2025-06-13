@@ -1,0 +1,3 @@
+# Seeing Around Corners in Real-Time using Mobile LiDAR
+
+Non-line-of-sight imaging extends perception beyond direct view but has remained impractical on everyday devices. This demo presents a real-time system that uses a commercial mobile LiDAR sensor to track and reconstruct objects hidden around corners. By aggregating multi-bounce LiDAR returns across consecutive frames, our method boosts signal-to-noise ratio and emulates longer exposures, enabling motion-compensated tracking and reconstruction at ~15 Hz. Our system validates the practical implementation of non-line-of-sight imaging on consumer hardware, paving the way for next-generation applications in robotics, autonomous navigation, and augmented reality.
