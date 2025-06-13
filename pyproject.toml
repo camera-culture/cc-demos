@@ -8,7 +8,7 @@ package-mode = false
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.14"
-cc-hardware = {path = "../../cc-hardware/cc-hardware-main", develop = true}
+# cc-hardware = {path = "../../cc-hardware/cc-hardware-main", develop = true}
 trimesh = "^4.6.11"
 torch = "^2.1.0"
 
