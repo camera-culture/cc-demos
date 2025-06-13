@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "CC Demos"
 authors = ["Camera Culture <a2cc@media.mit.edu>"]
 readme = "README.md"
+package-mode = false
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.14"
@@ -11,6 +12,41 @@ cc-hardware = {path = "../../cc-hardware/cc-hardware-main", develop = true}
 trimesh = "^4.6.11"
 torch = "^2.1.0"
 
+[tool.poetry.group.dev.dependencies]
+pip = "^24.2"
+black = "^24.8.0"
+flake8 = "^7.1.1"
+Flake8-pyproject = "^1.2.3"
+isort = "^5.13.2"
+pyright = "^1.1.381"
+pytest = "^8.3.3"
+pre-commit = "^3.8.0"
+
+[tool.poetry.group.docs.dependencies]
+sphinx = "7.2.6"
+furo = "2023.9.10"
+sphinx-autoapi = "3.0.0"
+sphinx-autobuild = "2021.3.14"
+myst-parser = "2.0.0"
+sphinxcontrib-googleanalytics = "0.4"
+
+[tool.black]
+line-length = 88
+target-version = ['py312']
+
+[tool.pylint."messages control"]
+ignore = ["setup.py", "__init__.py"]
+disable = "all"
+enable = [
+  "empty-docstring",
+  "missing-class-docstring",
+  "missing-function-docstring",
+  "missing-module-docstring",
+]
+
+[tool.isort]
+profile = "black"
+known_first_party = ["cc_demos"]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
