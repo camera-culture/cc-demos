@@ -1,10 +1,11 @@
 import sys
 from pathlib import Path
+from collections import deque
+import time
 
 import numpy as np
 import trimesh
-import vispy
-from vispy import app, scene
+from vispy import app, scene, visuals
 from vispy.visuals import transforms
 from vispy.io import read_mesh  # noqa: F401
 
@@ -90,6 +91,42 @@ class HistogramWidget(QtWidgets.QWidget):
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
         painter.drawRoundedRect(self.rect(), 6, 6)
 
+class CameraWidget(QtWidgets.QWidget):
+    def __init__(self, parent=None, size=(320, 240)):
+        super().__init__(parent)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAutoFillBackground(False)
+        self.setFixedSize(*size)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self.label = QtWidgets.QLabel()
+        self.label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.label.setScaledContents(True)
+        layout.addWidget(self.label)
+
+    def update(self, *, image: np.ndarray):
+        if image.ndim == 2:                       # grayscale → RGB
+            image = np.stack([image] * 3, axis=-1)
+        if image.dtype != np.uint8:               # ensure uint8
+            image = np.clip(image, 0, 255).astype(np.uint8)
+        h, w, _ = image.shape
+        # crop center 2/3rds of image in width
+        # image = image[:, w // 6: -w // 6, :]
+        # h, w = image.shape[:2]
+        image = np.ascontiguousarray(image)  # ensure contiguous memory layout
+        qimg = QtGui.QImage(image.data, w, h, 3 * w,
+                            QtGui.QImage.Format.Format_RGB888)
+        self.label.setPixmap(QtGui.QPixmap.fromImage(qimg))
+
+    def paintEvent(self, ev):
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        p.setBrush(QtGui.QColor(255, 255, 255, 100))
+        p.setPen(QtCore.Qt.PenStyle.NoPen)
+        p.drawRoundedRect(self.rect(), 6, 6)
+
 
 # -------------------- Dashboard --------------------
 class CVPR25FullDashboard(Dashboard[CVPR25FullDashboardConfig]):
@@ -124,19 +161,53 @@ class CVPR25FullDashboard(Dashboard[CVPR25FullDashboardConfig]):
             alpha=1.0,
             color=(0.8, 0.2, 0.2),
         )
+        # self.stop_sign = self._load_static_scene(
+        #     Path("data") / "stop_sign.obj",
+        #     alpha=1.0,
+        #     color=(0.8, 0.2, 0.2),
+        #     hide=True,
+        # )
+        # self.stop_sign_text = self._load_static_scene(
+        #     Path("data") / "stop_sign_text.obj",
+        #     alpha=1.0,
+        #     color=(1.0, 1.0, 1.0),
+        #     hide=True,
+        # )
+        self.caution_sign = self._load_static_scene(
+            Path("data") / "caution_sign.obj",
+            alpha=1.0,
+            color=(0.9, 0.75, 0.15),
+            hide=True,
+        )
         self._load_object_mesh()
         self._create_gt_scatter()
         self._create_path_visualization()
         self._configure_camera()
 
+        # velocity history (last N frames) and arrow visual
+        self._vel_hist = deque(maxlen=8)          # N = 8 frames
+        # self._arrow = scene.visuals.Arrow(
+        #     pos=np.zeros((2, 3)),
+        #     color=self.pred_mesh.color,
+        #     arrow_color=self.pred_mesh.color,
+        #     arrow_size=12,
+        #     arrow_type="triangle_60",
+        #     width=2,
+        #     parent=self.view.scene,
+        # )
+        # self._arrow.visible = False
+
+
         # histogram overlay
         self.histogram_widget = HistogramWidget(self.win)
+        self.camera_widget = CameraWidget(self.win)
 
         self.win.resize(1280, 800)
         self.win.showFullScreen()
         self.canvas.show()
 
         self._place_histogram()
+        self._place_camera()
 
         self.win.installEventFilter(self.win)
 
@@ -144,6 +215,7 @@ class CVPR25FullDashboard(Dashboard[CVPR25FullDashboardConfig]):
     def eventFilter(self, obj, ev):
         if ev.type() == QtCore.QEvent.Type.Resize and obj is self.win:
             self._place_histogram()
+            self._place_camera()
         return super().eventFilter(obj, ev)
 
     def _place_histogram(self):
@@ -151,6 +223,9 @@ class CVPR25FullDashboard(Dashboard[CVPR25FullDashboardConfig]):
         h = self.win.size().height()
         self.histogram_widget.move(margin, h - self.histogram_widget.height() - margin)  # bottom-left
 
+    def _place_camera(self):
+        margin = 12
+        self.camera_widget.move(margin, margin)        # top-left
 
     def _load_static_scene(
         self,
@@ -225,22 +300,47 @@ class CVPR25FullDashboard(Dashboard[CVPR25FullDashboardConfig]):
         path: np.ndarray | None = None,
         gt_positions: list[tuple[float, float]] = [],
         histograms: np.ndarray | None = None,
+        image: np.ndarray | None = None,
         **_,
     ):
-        if positions:
-            x, y = positions[0]
-            self.pred_mesh.color = (0, 1, 0, 1) if y > 16 else (1, 0, 0, 1)
-            T = transforms.MatrixTransform()
-            T.scale((0.05, 0.05, 0.05))
-            T.rotate(-90, (0, 1, 0))
-            T.translate((x, y, self._OBJ_Z))
-            self.pred_mesh.transform = T
+        x, y = positions[0]
+        self.pred_mesh.color = (0, 1, 0, 1) if y > 16 else (1, 0, 0, 1)
+        T = transforms.MatrixTransform()
+        T.scale((0.05, 0.05, 0.05))
+        T.rotate(-90, (0, 1, 0))
+        T.translate((x, y, self._OBJ_Z))
+        self.pred_mesh.transform = T
+
+        # # --- direction-of-travel arrow ---
+        # now = time.time()
+        # self._vel_hist.append((now, np.array([x, y, self._OBJ_Z])))
+
+        # if len(self._vel_hist) > 1:
+        #     t0, p0 = self._vel_hist[0]
+        #     tn, pn = self._vel_hist[-1]
+        #     dt = tn - t0
+        #     if dt > 0:
+        #         v = (pn - p0) / dt              # velocity vector (units/sec)
+        #         speed = np.linalg.norm(v)
+        #         if speed > 1e-3:                # ignore tiny movement
+        #             scale = 0.5                 # arrow length scaling factor
+        #             end = pn + (v / speed) * speed * scale
+        #             # arrows = self.pred_mesh.transform.apply_to(
+        #             #     np.array([pn, end])
+        #             # )
+        #             self._arrow.set_data(pos=np.vstack([pn, end]), color=self.pred_mesh.color)
+        #             self._arrow.visible = True
+        #         else:
+        #             self._arrow.visible = False
 
         if path is not None:
             centroid = np.mean(path, axis=0)
             self.stop_line.visible = y < 16
+            # self.stop_sign.visible = y < 16
+            # self.stop_sign_text.visible = y < 16
+            self.caution_sign.visible = y < 16
             if y < 16:
-                path = path[: int(len(path) * 2 / 3)]
+                path = path[: int(len(path) * 2 / 3) - 1]
             self.path_line.set_data(pos=path)
             self.path_line.transform = transforms.MatrixTransform()
             self.path_line.transform.translate(-centroid)
@@ -255,6 +355,9 @@ class CVPR25FullDashboard(Dashboard[CVPR25FullDashboardConfig]):
 
         if histograms is not None:
             self.histogram_widget.update(histograms=histograms)
+
+        if image is not None:
+            self.camera_widget.update(image=image)
 
         self.canvas.update()
         self.app.processEvents()
@@ -278,17 +381,22 @@ class CVPR25FullDashboard(Dashboard[CVPR25FullDashboardConfig]):
 
 # -------------------- Script entry --------------------
 if __name__ == "__main__":
+    import time
+
     dash = CVPR25FullDashboard(
         CVPR25FullDashboardConfig(x_range=(0, 32), y_range=(0, 32))
     )
     dash.setup()
 
-    position = (16.0, 0.0)
     path = np.array([[0, 0, 0], [10, 10, 0], [20, 5, 0], [30, 15, 0]])
     fake_hist = np.random.randint(0, 100, size=(END_BIN - START_BIN))
+    start_time = time.time()
 
     try:
         while dash.is_okay:
+            t = (time.time() - start_time) % 5
+            y = 16 + 16 * np.sin(2 * np.pi * t / 5)
+            position = (16.0, y)
             dash.update(frame=0, positions=[position], path=path, histograms=fake_hist)
     except KeyboardInterrupt:
         dash.close()

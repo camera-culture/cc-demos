@@ -10,6 +10,7 @@ import numpy as np
 from cc_hardware.tools.dashboard import Dashboard
 from cc_hardware.drivers.spads import SPADDataType, SPADSensor, SPADSensorConfig
 from cc_hardware.drivers.spads.pkl import PklSPADSensorConfig
+from cc_hardware.drivers.cameras.usb import USBCameraConfig, USBCamera
 from cc_hardware.drivers.stepper_motors import StepperMotorSystem
 from cc_hardware.drivers.stepper_motors.stepper_controller import (
     SnakeControllerAxisConfig,
@@ -61,6 +62,10 @@ STEPPER_CONTROLLER = SnakeStepperControllerConfigXY.create(
     )
 )
 
+CAMERA = USBCameraConfig.create(
+    camera_index=0,
+)
+
 GUI = CVPR25DashboardConfig.create(
     x_range=(0, 32),
     y_range=(0, 32),
@@ -78,6 +83,7 @@ PATH_THREAD_EVENT = multiprocessing.Event()
 # ==========
 
 POSITIONS = []
+HISTOGRAMS = []
 LAST_POSITION = None
 CONTROLLER_POS = AtomicVariable((0.0, 0.0))
 PREDICTED_POS: MPAtomicVariable
@@ -99,6 +105,8 @@ def stepper_callback(
     if not manager.is_looping:
         get_logger().info("Manager is not looping, stopping stepper callback.")
         return
+
+    time.sleep(2)
 
     if repeat:
         i %= controller.total_positions
@@ -243,6 +251,7 @@ def path_callback(
             path_xyz = np.c_[y_w, x_w, np.zeros_like(x_w)]
 
             PATH.set(path_xyz)
+            break
 
 
 # ==========
@@ -336,6 +345,10 @@ def create_gui(manager: Manager) -> Dashboard:
 
     return gui
 
+def create_camera(manager: Manager) -> None:
+    """Creates a camera instance and adds it to the manager."""
+    camera = USBCamera.create_from_config(CAMERA)
+    manager.add(camera=camera)
 
 # ==========
 
@@ -356,6 +369,7 @@ def setup(
     assert len(config) == 1, "Expected exactly one configuration in the pickle file."
     config = config[0]
 
+    create_camera(manager)
     _, sensor_config = create_sensor(manager, config, sensor_port=sensor_port)
     load_model(manager, model_path, sensor_config)
     create_gui(manager)
@@ -366,6 +380,7 @@ def loop(
     frame: int,
     model: DeepLocation8,
     gui: Dashboard,
+    camera: USBCamera,
     **kwargs,
 ):
     global LAST_POSITION
@@ -374,11 +389,15 @@ def loop(
     if len(histogram) == 0:
         get_logger().warning("No histogram available for evaluation.")
         return
+    HISTOGRAMS.append(histogram)
+    if len(HISTOGRAMS) > 20:
+        HISTOGRAMS.pop(0)
     positions = model.evaluate(histogram)
     POSITIONS.append(positions)
-    if len(POSITIONS) > 20:
+    if len(POSITIONS) > 1:
         POSITIONS.pop(0)
 
+    image = camera.accumulate()
     position = np.mean(POSITIONS, axis=0)
     position = np.array(
         (position[0], 32 - position[1])
@@ -388,12 +407,14 @@ def loop(
     #     position = LAST_POSITION + 0.1 * (position - LAST_POSITION)
     # LAST_POSITION = position
     PREDICTED_POS.set(position)
+    histogram = np.mean(HISTOGRAMS, axis=0)
     histogram = np.mean(histogram, axis=(0, 1))
     gui.update(
         frame=frame,
         positions=[position],
         # gt_positions=[CONTROLLER_POS.get()],
         histograms=histogram,
+        image=image,
         path=PATH.get(),
     )
 
@@ -450,7 +471,7 @@ def cvpr2025(
 
 
 if __name__ == "__main__":
-    PREDICTED_POS = MPAtomicVariable((0.0, 0.0))
+    PREDICTED_POS = MPAtomicVariable((16.0, 24.0))
     PREDICTED_POS.get()
     PATH = MPAtomicVariable(None)
     PATH.get()
