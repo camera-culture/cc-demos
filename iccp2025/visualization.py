@@ -145,6 +145,10 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
         self.sig_widget = CameraWidget(self.win)
         self.sig_label = TextWidget("Raw Signal", self.win, font_size=30)
 
+        # === rendered mean overlay QWidget === #
+        self.rend_sig_widget = CameraWidget(self.win)
+        self.rend_sig_label = TextWidget("Rendered Mean", self.win, font_size=30)
+
         # === plot camera field of view === #
         self._box_sz = 0.1
         self.sensor_box = QtWidgets.QGraphicsRectItem(
@@ -179,7 +183,7 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
         # === show the window === #
         self.win.showFullScreen()
         self.sig_widget.show()
-        self.sig_label.show()
+        # self.sig_label.show()
         self._place_sig_widget()
         self.win.installEventFilter(self.win)
 
@@ -245,7 +249,12 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
         # self.sensor_label.setAngle(-rot)
 
     # ---- main update ----
-    def update(self, volume: np.ndarray, signal: np.ndarray, pt_cloud: np.ndarray) -> None:
+    def update(self, 
+               volume: np.ndarray, 
+               signal: np.ndarray, 
+               pt_cloud: np.ndarray,
+               rendered_mean: np.ndarray) -> None:
+
         # === Update particle positions  === #
         self.particles.setData(volume[:, 0], volume[:, 2])
 
@@ -264,6 +273,9 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
 
         # === Update signal === #
         self.sig_widget.update(image=signal)
+
+        # === Update rendered mean === #
+        # self.rend_sig_widget.update(image=rendered_mean)
 
         # === Update sensor pose === #
         self._update_sensor(pt_cloud)

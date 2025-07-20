@@ -89,15 +89,19 @@ def setup(
     pt_cloud[:, 0] = -x_coords # -x points left
     pt_cloud[:, 1] = y_coords    
 
-    # save point cloud data
+    # get bin_0
+    hists = np.mean([d[SPADDataType.HISTOGRAM] for d in data], axis=0)
+    bin_0 = np.argmax(hists[..., :], axis=-1).reshape(-1) # (num_pixels, )
+
+    # === save point cloud data === #
     cam_z = abs(cam_z)
-    np.savez(LOG_DIR / "calibration.npz", pt_cloud=pt_cloud, cam_z=cam_z)
+    np.savez(LOG_DIR / "calibration.npz", pt_cloud=pt_cloud, cam_z=cam_z, bin_0=bin_0)
 
     # visualize point cloud
     plt.figure(figsize=(15, 5))
 
     plt.title(f"Point Cloud (camera z = {cam_z:.2f} m)")
-    
+
     # remove spines of plot
     for ax in plt.gcf().axes:
         ax.spines['top'].set_visible(False)
@@ -117,6 +121,14 @@ def setup(
     plt.scatter(pt_cloud[:, 1], pt_cloud[:, 2])
     
     plt.savefig(LOG_DIR / "pt_cloud.png")
+    plt.close()
+
+    # visualize histogram 
+    plt.figure()
+    plt.imshow(hists.reshape(-1, hists.shape[-1]), cmap="hot")
+    plt.plot(bin_0, np.arange(bin_0.shape[0]), 'g--')
+    plt.savefig(LOG_DIR / "histogram.png")
+    plt.close()
 
     input(f"Point cloud saved to {LOG_DIR}. ctrl-c to close program...")
 

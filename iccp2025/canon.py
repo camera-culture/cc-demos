@@ -10,6 +10,7 @@ SPEED_OF_LIGHT = 3E8
 class FastSumOfParabolas(nn.Module):
     def __init__(self,
                 configs: dict,
+                zrange: list,
                 points: np.array,
                 device: str,
                 loaded_voxel: np.array = None
@@ -42,6 +43,9 @@ class FastSumOfParabolas(nn.Module):
         self.t_res = configs.t_res
 
         self.numBins = configs.num_lct_bins
+        # max_range = (x_min ** 2 + x_max ** 2 + zrange[1] ** 2) ** 0.5
+        # self.v_range = max_range ** 2 # v range of canonical
+
         self.v_range = ((SPEED_OF_LIGHT * self.numBins * self.t_res / 2) ** 2)
         self.v_res = self.v_range / self.numBins
        
@@ -132,7 +136,12 @@ class FastSumOfParabolas(nn.Module):
                     
                     for k in range(self.num_sub_bins):
                         # for l in range(5):
-                        np.add.at(canon_voxel, (y_idx, x_idx, v_idx + k - self.num_sub_bins//2), weights)
+                        mask = (v_idx + k - self.num_sub_bins//2) < self.num_v
+                        mask[:] = True
+                        np.add.at(canon_voxel, (y_idx[mask], 
+                                                x_idx[mask], 
+                                                v_idx[mask] + k - self.num_sub_bins//2), 
+                                                weights[mask])
 
         # === Normalize canonical measurement === #
         # canon_voxel = canon_voxel / np.sum(canon_voxel, axis=-1, keepdims=True)
@@ -151,7 +160,7 @@ class FastSumOfParabolas(nn.Module):
 
         Returns:
         --------
-        hists  : rendered measurement (batch_size, num_y, num_x, numBins)
+        hists  : rendered measurement (batch_size, num_pixels, numBins)
 
         """
         # start_time = time.time()
@@ -173,9 +182,9 @@ class FastSumOfParabolas(nn.Module):
             if torch.max(y_samp_cpu) < self.y_min or torch.min(y_samp_cpu) > self.y_max:
                 raise ValueError(f'y_samp out of bounds: {torch.min(y_samp_cpu)} {torch.max(y_samp_cpu)}')
         else:
-            if torch.max(x_samp) < self.x_min or torch.min(x_samp) > self.x_max:
+            if (x_samp < self.x_min).any() or (x_samp > self.x_max).any():
                 raise ValueError(f'x_samp out of bounds: {torch.min(x_samp)} {torch.max(x_samp)}')
-            if torch.max(y_samp) < self.y_min or torch.min(y_samp) > self.y_max:
+            if (y_samp < self.y_min).any() or (y_samp > self.y_max).any():
                 raise ValueError(f'y_samp out of bounds: {torch.min(y_samp)} {torch.max(y_samp)}')
 
         # end_time = time.time()

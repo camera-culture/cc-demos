@@ -148,9 +148,10 @@ class ParticleFilterAlgorithm:
                 loaded_voxel = None
 
             # === Instantiate canonical measurement === #
-            canon_rep = FastSumOfParabolas(canon_config, 
-                                           points, 
-                                           self.device, 
+            canon_rep = FastSumOfParabolas(configs=canon_config, 
+                                           zrange=self.config.z_range,
+                                           points=points, 
+                                           device=self.device, 
                                            loaded_voxel=loaded_voxel) # instantiate canonical measurement
             
             # === Save voxelized canonical if it doesn't exist === #
@@ -179,7 +180,7 @@ class ParticleFilterAlgorithm:
         assert SPADDataType.HISTOGRAM in data, "Histogram missing"
 
         self.frame += 1
-
+        num_sigma_from_mean = data['num_sigma_from_mean']
         pt_cloud = data[SPADDataType.POINT_CLOUD]
         hists = data[SPADDataType.HISTOGRAM]
 
@@ -194,8 +195,9 @@ class ParticleFilterAlgorithm:
         pt_cloud = torch.from_numpy(pt_cloud_np).to(self.device, non_blocking=True)
 
         # === Update particles and volume === #
-        scores = self._evaluate_particles(pt_cloud, hists)
-        self._resample_particles(scores)
+        scores = self._evaluate_particles(pt_cloud, hists) 
+        if num_sigma_from_mean > 3:
+            self._resample_particles(scores ** self.eta)
         cur_particles = self.particles.detach().cpu().numpy()
         self._propagate_particles()
         
@@ -278,6 +280,11 @@ class ParticleFilterAlgorithm:
         # plt.subplot(1, num_rows, 4)
         # plt.imshow(y_hat[0, :, :30], cmap='hot')
         # plt.show()
+
+        # === Ensure particles stay minimum distance from wall === #
+        mask = (particles[:, 2] < 0.1) 
+        mask_idxs = torch.where(mask)[0]
+        scores[mask_idxs] = 0
 
         # === Ensure scores are non-negative and remove nan entries === #
         scores_cpu = scores.detach().to('cpu', non_blocking=True)
