@@ -180,7 +180,7 @@ class ParticleFilterAlgorithm:
         assert SPADDataType.HISTOGRAM in data, "Histogram missing"
 
         self.frame += 1
-        num_sigma_from_mean = data['num_sigma_from_mean']
+        # num_sigma_from_mean = data['num_sigma_from_mean']
         pt_cloud = data[SPADDataType.POINT_CLOUD]
         hists = data[SPADDataType.HISTOGRAM]
 
@@ -196,8 +196,9 @@ class ParticleFilterAlgorithm:
 
         # === Update particles and volume === #
         scores = self._evaluate_particles(pt_cloud, hists) 
-        if num_sigma_from_mean > 3:
-            self._resample_particles(scores ** self.eta)
+        # if num_sigma_from_mean > 3:
+        #     self._resample_particles(scores ** self.eta)
+        self._resample_particles(scores ** self.eta)
         cur_particles = self.particles.detach().cpu().numpy()
         self._propagate_particles()
         

@@ -36,7 +36,7 @@ from cc_hardware.utils.file_handlers import PklHandler
 # ==================== SET PARAMETERS HERE ==================== #
 debug = True
 RECORD = True
-RECAPTURE_BACKGROUND = True
+RECAPTURE_BACKGROUND = False
 
 WRAPPED_SENSOR_CONFIG = VL53L8CHConfig4x4.create(
     num_bins=48,
@@ -113,7 +113,7 @@ def setup(
         # accumulate frames for point cloud and background
         data = []
         num_samples = _sensor.unwrapped.config.ranging_frequency_hz * 2
-        num_samples = 1000
+        # num_samples = 1000
         for _ in tqdm.tqdm(range(num_samples), leave=False, desc="Accumulating background data"):
             data.append(_sensor.accumulate())
 
@@ -185,7 +185,7 @@ def setup(
         y_range              = [-0.6, 0.6],
         z_range              = [0, 3],
         num_particles        = 1000,
-        eta                  = 1, # scores will be computed as scores = scores ** eta
+        eta                  = 3, # scores will be computed as scores = scores ** eta
         radius               = 0.1, # radius of motion model
         score_fn             = 'dot_product_score', # score function to use
         resampling_fn        = 'residual', # resampling function to use
@@ -203,7 +203,8 @@ def setup(
 
     # === Initialize particle filter dashboard === #
     dashboard_config = ParticleFilterDashboardConfig(
-        xlim=particle_filter_config.x_range,
+        xlim=[-1.5, 0.3],
+        # xlim=particle_filter_config.x_range,
         ylim=particle_filter_config.y_range,
         zlim=particle_filter_config.z_range,
         xres=particle_filter_algorithm.xres,
@@ -274,12 +275,10 @@ def loop(
 
         # perform anomaly detection
         frame_energy = np.sum(hists)
-        print(frame_energy)
 
         # subtract background from hist and mask out 1b
         hists = np.maximum(hists - BACKGROUND, 0)
         hists *= HIST_MASK
-
         # normalize t=0 to be at 1-bounce peak
         process_hist = True
         hists_1b_crop = np.zeros((num_pixels, num_lct_bins))
@@ -300,23 +299,24 @@ def loop(
 
         # overwrite point cloud and histogram 
         data = {}
+        r = np.arange(num_lct_bins).reshape(1, -1)
         data[SPADDataType.POINT_CLOUD] = PT_CLOUD_GLOBAL
-        data[SPADDataType.HISTOGRAM] = hists_1b_crop 
-        data['num_sigma_from_mean'] = abs(frame_energy - MEAN) / STD
+        data[SPADDataType.HISTOGRAM] = hists_1b_crop * r**2 
+        # data['num_sigma_from_mean'] = abs(frame_energy - MEAN) / STD
 
         # particle filter update
         particles = algorithm.update(data)
 
         # === Update dashboard to reflect new particle positions === #
+
         if backprojection_dashboard is not None:
             mean_est = algorithm.particles.mean(dim=0).reshape(1, 3)
-            import torch
-            rendered_mean = algorithm.canons[0](pt_cloud=torch.Tensor(PT_CLOUD_GLOBAL), deltas=mean_est).squeeze().numpy()
+            # import torch
+            # rendered_mean = algorithm.canons[0](pt_cloud=torch.Tensor(PT_CLOUD_GLOBAL), deltas=mean_est).squeeze().numpy()
             backprojection_dashboard.update(
                 particles,
                 hists_1b_crop[:, :num_bins + (START_FRAME-1)],
                 PT_CLOUD_GLOBAL,
-                rendered_mean[:, :num_bins + (START_FRAME-1)],
             )
 
     if writer is not None:

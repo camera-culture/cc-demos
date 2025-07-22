@@ -75,7 +75,7 @@ def setup(
     # === Accumulate frames for point cloud and background (assume stationary) === #
     # accumulate frames for point cloud and background
     data = []
-    for _ in tqdm.tqdm(range(_sensor.unwrapped.config.ranging_frequency_hz * 2), leave=False, desc="Accumulating background data"):
+    for _ in tqdm.tqdm(range(_sensor.unwrapped.config.ranging_frequency_hz * 2), leave=False, desc="Calibrating point cloud data"):
         data.append(_sensor.accumulate())
     
     # compute point cloud, background, and t0 from average of first N frames

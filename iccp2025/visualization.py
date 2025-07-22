@@ -91,6 +91,7 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
         # === Define top-down view === #
         wall_thickness = 0.1  # thinner
         self.top = self.win.addPlot()
+        self.top.showGrid(x=True, y=True)
         self.top.setAspectLocked()
         self.top.setLabels(bottom="X (m)", left="Z (m)")
         self.top.setXRange(cfg.xlim[0], cfg.xlim[1])
@@ -101,8 +102,9 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
         self.top.addItem(pg.InfiniteLine(pos=0, angle=90, pen=grey))
 
         # === Draw relay wall as black flat thin rectangle === #
-        wall_mid = (cfg.zlim[0] + cfg.zlim[1]) / 2 # y value in plot
+        wall_mid = (cfg.xlim[0] + cfg.xlim[1]) / 2 # x value in plot
         wall_length = cfg.xlim[1] - cfg.xlim[0] # extent in x in plot
+        self.cam_z = cfg.cam_z
         
 
         # define rectangle as a QPainterPath
@@ -122,11 +124,12 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
         font.setBold(True)
         wall_label.setFont(font)
         self.top.addItem(wall_label)
-        wall_label.setPos(cfg.xlim[1] + 0.1, -wall_thickness / 2)
+        wall_label.setPos(wall_mid, -wall_thickness - 0.05)
 
         # === plot particles as points === #
         self.particles = pg.ScatterPlotItem()
         self.top.addItem(self.particles)
+        self.plot_particles = True
 
         # === plot mean particle position as a point === #
         self.mean_particle = pg.ScatterPlotItem(size=30, pen=None, brush=pg.mkBrush(255, 0, 0, 255))
@@ -152,28 +155,61 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
         # === plot camera field of view === #
         self._box_sz = 0.1
         self.sensor_box = QtWidgets.QGraphicsRectItem(
-            -self._box_sz * 0.2, -self._box_sz * 0.5, self._box_sz, self._box_sz
+            -self._box_sz/2, -self._box_sz/2, self._box_sz, self._box_sz
         )
-        self.sensor_box.setBrush(QtGui.QBrush(QtGui.QColor(255, 0, 0)))
+        self.sensor_box.setBrush(QtGui.QBrush(QtGui.QColor(128, 128, 128)))
         self.sensor_box.setPen(QtGui.QPen(QtCore.Qt.PenStyle.NoPen))
+        # self.sensor_box.setTransformOriginPoint(0, -self._box_sz/2)
         self.top.addItem(self.sensor_box)
-        self.sensor_label = pg.TextItem("Sensor", anchor=(0.5, 0.0), color="r")
+
+        self.triangle_height = 0.05
+        self.sensor_triangle = QtWidgets.QGraphicsPolygonItem(
+            QtGui.QPolygonF([
+                QtCore.QPointF(0, self.triangle_height),
+                QtCore.QPointF(-self.triangle_height, 0),
+                QtCore.QPointF(self.triangle_height, 0),
+            ])
+        )
+        self.sensor_triangle.setBrush(QtGui.QBrush(QtGui.QColor(128, 128, 128)))
+        self.sensor_triangle.setPen(QtGui.QPen(QtCore.Qt.PenStyle.NoPen))
+        self.sensor_triangle.setTransformOriginPoint(0, self.triangle_height + self._box_sz/2)
+        self.top.addItem(self.sensor_triangle)
+        
+
+
+        self.sensor_label = pg.TextItem("Sensor", anchor=(0.5, 0.0), color="gray")
         lab_font = QtGui.QFont()
         lab_font.setPointSize(18); lab_font.setBold(True)
         self.sensor_label.setFont(lab_font)
 
+
+
         
         self.top.addItem(self.sensor_label)
-        pen_fov = pg.mkPen((255, 0, 0), width=2,
+        pen_fov = pg.mkPen((128, 128, 128), width=3,
                    style=QtCore.Qt.PenStyle.DashLine)
 
         self.fov_left  = QtWidgets.QGraphicsLineItem()
-        self.fov_right = QtWidgets.QGraphicsLineItem()
+        self.fov_right = QtWidgets.QGraphicsLineItem() 
         self.fov_left.setPen(pen_fov)
         self.fov_right.setPen(pen_fov)
         self.top.addItem(self.fov_left)
         self.top.addItem(self.fov_right)
-        self.cam_z = cfg.cam_z
+        
+
+        # === plot occluder line === #
+        occluder_wall_length = 0.7
+        self.occluder_line = QtWidgets.QGraphicsLineItem()
+        self.occluder_line.setPen(pg.mkPen((0, 0, 0), width=3,
+                   style=QtCore.Qt.PenStyle.SolidLine))
+        self.occluder_line.setLine(-0.1, self.cam_z, -0.1, self.cam_z+ occluder_wall_length)
+        self.top.addItem(self.occluder_line)
+        self.occluder_label = pg.TextItem("Occluder", anchor=(0.5, 0.0), color="black")
+        self.occluder_label.setFont(lab_font)
+        self.occluder_label.setPos(-0.1, self.cam_z +occluder_wall_length + 0.1)
+        self.top.addItem(self.occluder_label)
+
+        # === Add grid lines to plot === #
 
         # overlay geometry factors
         self.ov_wf = cfg.overlay_w_frac
@@ -206,6 +242,12 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
             self.sig_widget.y() - self.sig_label.height()
         )
 
+    def flip_particle_plotting(self):
+        text = self.line_edit.text()
+        if text == "p":
+            return True
+        return False
+
 
     # ---- sensor pose from point-cloud ----
     def _update_sensor(self, pt_cloud: np.ndarray) -> None:
@@ -232,11 +274,13 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
 
         cam_x = 0
 
-        self.sensor_box.setPos(cam_x, self.cam_z)
-        self.sensor_label.setPos(cam_x + self._box_sz, self.cam_z)
+        # self.sensor_triangle.setPos(cam_x, self.cam_z-self._box_sz)
+        # self.sensor_box.setPos(cam_x, self.cam_z)
+        self.sensor_label.setPos(cam_x + self._box_sz+0.1, self.cam_z)
 
         ang_c = np.arctan2(y, z + 1e-9)          # central
         half   = np.deg2rad(45)                  # ±45° FOV
+
 
         for x_pos, item in ((np.min(pt_cloud[:, 0]), self.fov_left),
                         (np.max(pt_cloud[:, 0]), self.fov_right)):
@@ -244,23 +288,45 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
             item.setVisible(True)
             item.setLine(x_pos, 0, 0, self.cam_z) # (a, b, c, d) line from (a, b) to (c, d)
 
-        rot = -np.degrees(ang_c)
+        ray_1 = np.array([np.min(pt_cloud[:, 0]), 0]) - np.array([0, self.cam_z])
+        ray_2 = np.array([np.max(pt_cloud[:, 0]), 0]) - np.array([0, self.cam_z])
+        ray_1 = ray_1 / np.linalg.norm(ray_1)
+        ray_2 = ray_2 / np.linalg.norm(ray_2)
+        cam_ray = (ray_1 + ray_2) / 2
+        rot = np.degrees(np.arctan2(cam_ray[1], cam_ray[0])) + 90
+        
+        # rot = 45
         self.sensor_box.setRotation(rot)
-        # self.sensor_label.setAngle(-rot)
+        self.sensor_triangle.setRotation(rot)
+        
+        box_pos = np.array([0, self.cam_z])
+        triangle_pos = np.array([0, self.cam_z-self.triangle_height-self._box_sz/2])
+
+        box_pos = box_pos - cam_ray * (self._box_sz/2 + self.triangle_height)
+        triangle_pos = triangle_pos - cam_ray * (self._box_sz/2 + self.triangle_height)
+
+        self.sensor_box.setPos(box_pos[0], box_pos[1]) # self.cam_z)
+        self.sensor_triangle.setPos(triangle_pos[0], triangle_pos[1])
+
 
     # ---- main update ----
     def update(self, 
                volume: np.ndarray, 
                signal: np.ndarray, 
-               pt_cloud: np.ndarray,
-               rendered_mean: np.ndarray) -> None:
+               pt_cloud: np.ndarray) -> None:
 
-        # === Update particle positions  === #
-        self.particles.setData(volume[:, 0], volume[:, 2])
+        # === Determine whether to add/remove particle plotting based on user input === #
+        # if self.flip_particle_plotting():
+        #     self.plot_particles = not self.plot_particles
+        #     self.particles.setVisible(self.plot_particles)
 
-        # === Update mean particle position === #
-        mean_particle = volume.mean(axis=0)
-        self.mean_particle.setData([mean_particle[0]], [mean_particle[2]])
+        if self.plot_particles:
+            # === Update particle positions  === #
+            self.particles.setData(volume[:, 0], volume[:, 2])
+
+            # === Update mean particle position === #
+            mean_particle = volume.mean(axis=0)
+            self.mean_particle.setData([mean_particle[0]], [mean_particle[2]])
 
         # === Plot past 10 mean particle positions === #
         self.past_positions_x.append(mean_particle[0])
