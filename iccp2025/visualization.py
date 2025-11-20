@@ -4,6 +4,7 @@ from pyqtgraph.Qt import QtCore, QtGui, QtWidgets
 import numpy as np
 import matplotlib.cm as cm
 import time
+from typing import List
 
 @config_wrapper
 class ParticleFilterDashboardConfig:
@@ -17,6 +18,7 @@ class ParticleFilterDashboardConfig:
     num_y: int
     num_z: int
     cam_z: float
+    occluder_dist_to_cam: list
     cmap: str = "hot"
     gamma: float = 1.0
     arc_span_deg: float = 30.0
@@ -77,10 +79,58 @@ class TextWidget(QtWidgets.QWidget):
         self.label.setStyleSheet(f"font-size: {font_size}px; font-weight: bold;")
         layout.addWidget(self.label)
 
+class ParticleToggle(QtWidgets.QWidget):
+    def __init__(self, parent, particles):
+        super().__init__(parent)
+
+        self.plot = parent
+
+        # Layout for all widgets
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Create and add a QPushButton
+        self.button = QtWidgets.QPushButton("show/hide particles")
+        layout.addWidget(self.button)
+
+        self.particles = particles
+        self.plot_particles = False
+
+        # optionally connect button to a function
+        self.button.clicked.connect(self.on_button_clicked)
+
+    def on_button_clicked(self):
+        self.plot_particles = not self.plot_particles
+        self.particles.setVisible(self.plot_particles)
+        
+
+class GridToggle(QtWidgets.QWidget):
+    def __init__(self, parent, plot_window):
+        super().__init__(parent)
+
+        self.plot = plot_window
+
+        # Layout for all widgets
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Create and add a QPushButton
+        self.button = QtWidgets.QPushButton("show/hide grid lines")
+        layout.addWidget(self.button)
+
+        self.is_enabled = True
+
+        # optionally connect button to a function
+        self.button.clicked.connect(self.on_button_clicked)
+
+    def on_button_clicked(self):
+        self.is_enabled = not self.is_enabled
+        self.plot.showGrid(x=self.is_enabled, y=self.is_enabled)
+
+    
 class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
     def __init__(self, cfg: ParticleFilterDashboardConfig):
         super().__init__(cfg)
 
+        # Layout for all widgets
         pg.setConfigOption("background", "w")
         pg.setConfigOption("foreground", "k")
         pg.mkQApp()
@@ -92,6 +142,8 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
         wall_thickness = 0.1  # thinner
         self.top = self.win.addPlot()
         self.top.showGrid(x=True, y=True)
+
+        
         self.top.setAspectLocked()
         self.top.setLabels(bottom="X (m)", left="Z (m)")
         self.top.setXRange(cfg.xlim[0], cfg.xlim[1])
@@ -120,7 +172,7 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
         # === wall label bold, to right of wall === #
         wall_label = pg.TextItem("Relay Wall", anchor=(0.5, 0.5), color="k", angle=0)
         font = QtGui.QFont()
-        font.setPointSize(20)
+        font.setPointSize(30)
         font.setBold(True)
         wall_label.setFont(font)
         self.top.addItem(wall_label)
@@ -179,10 +231,8 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
 
         self.sensor_label = pg.TextItem("Sensor", anchor=(0.5, 0.0), color="gray")
         lab_font = QtGui.QFont()
-        lab_font.setPointSize(18); lab_font.setBold(True)
+        lab_font.setPointSize(30); lab_font.setBold(True)
         self.sensor_label.setFont(lab_font)
-
-
 
         
         self.top.addItem(self.sensor_label)
@@ -195,22 +245,81 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
         self.fov_right.setPen(pen_fov)
         self.top.addItem(self.fov_left)
         self.top.addItem(self.fov_right)
-        
+
+        # === Plot scene landmarks === #
+        # area 1
+        self.area1 = QtWidgets.QGraphicsRectItem(
+            -self._box_sz/2, -self._box_sz/2, self._box_sz, self._box_sz
+        )
+        self.area1.setBrush(QtGui.QBrush(QtGui.QColor(0, 255, 0)))
+        self.area1.setPen(QtGui.QPen(QtCore.Qt.PenStyle.NoPen))
+        # self.area1.setPos(-(-0.83+0.05), 0.76)
+        self.area1.setPos(0.6, 0.6)
+        # self.top.addItem(self.area1)
+
+        # area 2
+        self.area2 = QtWidgets.QGraphicsRectItem(
+            -self._box_sz/2, -self._box_sz/2, self._box_sz, self._box_sz
+        )
+        self.area2.setBrush(QtGui.QBrush(QtGui.QColor(0, 255, 0)))
+        self.area2.setPen(QtGui.QPen(QtCore.Qt.PenStyle.NoPen))
+        # self.sensor_box.setTransformOriginPoint(0, -self._box_sz/2)
+        # self.area2.setPos(-(-1.16-0.05), 0.76)
+        self.area2.setPos(0.9, 1)
+        # self.top.addItem(self.area2)
+
+        # # area 3
+        self.area3 = QtWidgets.QGraphicsRectItem(
+            -self._box_sz/2, -self._box_sz/2, self._box_sz, self._box_sz
+        )
+        self.area3.setBrush(QtGui.QBrush(QtGui.QColor(0, 255, 0)))
+        self.area3.setPen(QtGui.QPen(QtCore.Qt.PenStyle.NoPen))
+        # self.sensor_box.setTransformOriginPoint(0, -self._box_sz/2)
+        # self.area3.setPos(-(-0.83+0.05), 0.73 + 0.76)
+        self.area3.setPos(0.6, 1)
+
+        # self.top.addItem(self.area3)
+
+        # # # area 4
+        self.area4 = QtWidgets.QGraphicsRectItem(
+            -self._box_sz/2, -self._box_sz/2, self._box_sz, self._box_sz
+        )
+        self.area4.setBrush(QtGui.QBrush(QtGui.QColor(0, 255, 0)))
+        self.area4.setPen(QtGui.QPen(QtCore.Qt.PenStyle.NoPen))
+        # self.sensor_box.setTransformOriginPoint(0, -self._box_sz/2)
+        self.area4.setPos(0.9, 0.6)
+        # self.top.addItem(self.area4)
+
+
 
         # === plot occluder line === #
         occluder_wall_length = 0.7
         self.occluder_line = QtWidgets.QGraphicsLineItem()
         self.occluder_line.setPen(pg.mkPen((0, 0, 0), width=3,
                    style=QtCore.Qt.PenStyle.SolidLine))
-        self.occluder_line.setLine(-0.1, self.cam_z, -0.1, self.cam_z+ occluder_wall_length)
+        self.occluder_line.setLine(cfg.occluder_dist_to_cam[0], 
+                                   self.cam_z, 
+                                   cfg.occluder_dist_to_cam[0], 
+                                   self.cam_z + occluder_wall_length)
         self.top.addItem(self.occluder_line)
         self.occluder_label = pg.TextItem("Occluder", anchor=(0.5, 0.0), color="black")
         self.occluder_label.setFont(lab_font)
-        self.occluder_label.setPos(-0.1, self.cam_z +occluder_wall_length + 0.1)
+        self.occluder_label.setPos(-(-cfg.occluder_dist_to_cam[0] + 0.2)-0.05, self.cam_z + occluder_wall_length * 3/4)
         self.top.addItem(self.occluder_label)
 
-        # === Add grid lines to plot === #
+        # === toggles for gui === #
+        self.toggle_particle_view = ParticleToggle(self.win, self.particles)
+        self.toggle_particle_view.show()
 
+        self.toggle_gridlines = GridToggle(self.win,self.top)
+        h = self.win.size().height()
+        w = self.win.size().width()
+        self.toggle_gridlines.show()
+
+        self.toggle_gridlines.move( 
+            0, self.toggle_gridlines.height() - 15
+        )
+    
         # overlay geometry factors
         self.ov_wf = cfg.overlay_w_frac
         self.ov_hf = cfg.overlay_h_frac
@@ -250,13 +359,21 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
 
 
     # ---- sensor pose from point-cloud ----
-    def _update_sensor(self, pt_cloud: np.ndarray) -> None:
+    def _update_sensor(self, pt_cloud: np.ndarray, cam_z: float = None) -> None:
+
+        if cam_z is not None:
+            self.cam_z = np.abs(cam_z)
+
+        # === Compute sensor pose from point cloud === #
         pts = pt_cloud.reshape(-1, 3).astype(float)
+
+        # === Fit plane to point cloud === #
         centroid = pts.mean(axis=0)
         pts -= centroid
         _, _, vh = np.linalg.svd(pts)
         normal = vh[2]
 
+        # === Extract transformation matrix === #
         z_axis = np.array([0.0, 0.0, 1.0])
         v = np.cross(normal, z_axis)
         c = float(np.dot(normal, z_axis))
@@ -276,7 +393,7 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
 
         # self.sensor_triangle.setPos(cam_x, self.cam_z-self._box_sz)
         # self.sensor_box.setPos(cam_x, self.cam_z)
-        self.sensor_label.setPos(cam_x + self._box_sz+0.1, self.cam_z)
+        self.sensor_label.setPos(-(cam_x + self._box_sz+0.15)-0.05, self.cam_z)
 
         ang_c = np.arctan2(y, z + 1e-9)          # central
         half   = np.deg2rad(45)                  # ±45° FOV
@@ -313,20 +430,15 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
     def update(self, 
                volume: np.ndarray, 
                signal: np.ndarray, 
-               pt_cloud: np.ndarray) -> None:
+               pt_cloud: np.ndarray,
+               cam_z: float = None) -> None:
 
-        # === Determine whether to add/remove particle plotting based on user input === #
-        # if self.flip_particle_plotting():
-        #     self.plot_particles = not self.plot_particles
-        #     self.particles.setVisible(self.plot_particles)
+        # === Update particle positions  === #
+        self.particles.setData(volume[:, 0], volume[:, 2])
 
-        if self.plot_particles:
-            # === Update particle positions  === #
-            self.particles.setData(volume[:, 0], volume[:, 2])
-
-            # === Update mean particle position === #
-            mean_particle = volume.mean(axis=0)
-            self.mean_particle.setData([mean_particle[0]], [mean_particle[2]])
+        # === Update mean particle position === #
+        mean_particle = volume.mean(axis=0)
+        self.mean_particle.setData([mean_particle[0]], [mean_particle[2]])
 
         # === Plot past 10 mean particle positions === #
         self.past_positions_x.append(mean_particle[0])
@@ -344,7 +456,10 @@ class ParticleFilterDashboard(Component[ParticleFilterDashboardConfig]):
         # self.rend_sig_widget.update(image=rendered_mean)
 
         # === Update sensor pose === #
-        self._update_sensor(pt_cloud)
+        self._update_sensor(pt_cloud, cam_z)
+
+        # === update landmark locations === #
+        # self._update_landmark_locations()
 
         pg.QtGui.QGuiApplication.processEvents()
 
